@@ -42,19 +42,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "halcyon"
+version = "0.1.0"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "hermit-abi"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c30f6d0bc6b00693347368a67d41b58f2fb851215ff1da49e90fe2c5c667151"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "iotsecretary"
-version = "0.1.0"
-dependencies = [
- "clap",
 ]
 
 [[package]]
