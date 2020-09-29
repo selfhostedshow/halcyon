@@ -1,5 +1,5 @@
 [package]
-name = "iotsecretary"
+name = "halcyon"
 version = "0.1.0"
 authors = ["Bradley Nelson <bradleynelson102@gmail.com>"]
 edition = "2018"
