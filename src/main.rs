@@ -17,7 +17,7 @@ fn main() {
 
     match args.subcommand() {
         ("setup", Some(sub_m)) => command_setup(sub_m),
-       _ =>{
+        _ => {
             println!("Nothing to do, Goodbye");
         }
     }
