@@ -7,34 +7,36 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'iotsecretary'",
+            "name": "Debug executable 'halcyon'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=iotsecretary",
-                    "--package=iotsecretary"
+                    "--bin=halcyon",
+                    "--package=halcyon"
                 ],
                 "filter": {
-                    "name": "iotsecretary",
+                    "name": "halcyon",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [
+                "setup"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'iotsecretary'",
+            "name": "Debug unit tests in executable 'halcyon'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=iotsecretary",
-                    "--package=iotsecretary"
+                    "--bin=halcyon",
+                    "--package=halcyon"
                 ],
                 "filter": {
-                    "name": "iotsecretary",
+                    "name": "halcyon",
                     "kind": "bin"
                 }
             },

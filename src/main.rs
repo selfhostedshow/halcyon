@@ -19,10 +19,13 @@ fn main() {
 
     match args.subcommand() {
         ("setup", Some(sub_m)) => command_setup(sub_m),
-        _ =>{}
+        _ =>{
+            println!("Nothing to do, Goodbye");
+        }
     }
 }
 
-fn command_setup(args: &clap::ArgMatches) {
-    
+fn command_setup(_args: &clap::ArgMatches) {
+    println!("Welcome to setup");
+    println!("Hello, world!");
 }
