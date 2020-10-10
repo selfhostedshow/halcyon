@@ -7,7 +7,16 @@ use std::error;
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HaEntityAttribute {
+    pub friendly_name: Option<String>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HaEntityState {
+    pub attributes: HaEntityAttribute,
+}
 
 #[derive(Serialize, Deserialize)]
 struct RegisterDeviceRequest {
@@ -70,6 +79,21 @@ pub async fn get_access_token(
         _ => Left(resp.json::<GetAccessTokenError>().await?),
     };
     Ok(either)
+}
+
+pub async fn get_api_states(config: &YamlConfig) -> Result<Vec<HaEntityState>> {
+    let endpoint = format!("http://{}/api/states", config.ha.host);
+    let resp = Client::new()
+        .get(endpoint.as_str())
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.ha.long_lived_token.as_ref().unwrap()),
+        )
+        .send()
+        .await?;
+
+    let api_states: Vec<HaEntityState> = resp.json().await?;
+    Ok(api_states)
 }
 
 pub async fn register_machine(

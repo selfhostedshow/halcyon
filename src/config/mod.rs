@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
-use serde_yaml;
 use std::error;
 use std::io::Write;
-use uuid;
 use uuid::Uuid;
 
 use tiny_http::{Response, Server};
@@ -19,10 +17,6 @@ pub struct HaConfig {
     pub host: String,
     #[serde(rename = "long-lived-token")]
     pub long_lived_token: Option<String>,
-    #[serde(rename = "access-token")]
-    pub access_token: Option<String>,
-    #[serde(rename = "refresh-token")]
-    pub refresh_token: Option<String>,
     #[serde(rename = "device-id")]
     pub device_id: Option<String>,
 }
@@ -63,65 +57,62 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
     let server = Server::http("0.0.0.0:8000").unwrap();
     let mut get_token_response: Option<GetAccessTokenResponse> = None;
     println!("Open http://{}/auth/authorize?client_id=http%3A%2F%2Flocalhost%3A8000&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fcallback in your browser", config.ha.host.as_str());
-    loop {
-        // blocks until the next request is received
-        let request = match server.recv() {
-            Ok(rq) => rq,
-            Err(e) => {
-                println!("error: {}", e);
-                break;
-            }
-        };
-        let url = format!("http://localhost:8000{}", request.url());
-        let query_params: HashMap<_, _> = Url::parse(url.as_str())
-            .unwrap()
-            .query_pairs()
-            .into_owned()
-            .collect();
-        match query_params.get("code") {
-            Some(code) => {
-                request.respond(Response::from_string(
-                    "Halcyon now authenticated to Home Assistant. You can close this page now.",
-                ))?;
-                let either = ha_api::get_access_token(config, code.to_string()).await?;
-                match either {
-                    either::Left(_) => {
-                        get_token_response = None;
-                    }
-                    either::Right(succ) => {
-                        get_token_response = Some(succ);
+    // blocks until the next request is received
+    match server.recv() {
+        Ok(request) => {
+            let url = format!("http://localhost:8000{}", request.url());
+            let query_params: HashMap<_, _> = Url::parse(url.as_str())
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            match query_params.get("code") {
+                Some(code) => {
+                    request.respond(Response::from_string(
+                        "Halcyon now authenticated to Home Assistant. You can close this page now.",
+                    ))?;
+                    let either = ha_api::get_access_token(config, code.to_string()).await?;
+                    match either {
+                        either::Left(_) => {
+                            get_token_response = None;
+                        }
+                        either::Right(succ) => {
+                            get_token_response = Some(succ);
+                        }
                     }
                 }
-            }
-            None => {
-                request.respond(
-                    Response::from_string(
-                        "Something went wrong with authenticating Halcyon with Home Assistant",
-                    )
-                    .with_status_code(500),
-                )?;
-                get_token_response = None;
+                None => {
+                    request.respond(
+                        Response::from_string(
+                            "Something went wrong with authenticating Halcyon with Home Assistant",
+                        )
+                        .with_status_code(500),
+                    )?;
+                    get_token_response = None;
+                }
             }
         }
-        break;
-    }
+        Err(e) => {
+            println!("error: {}", e);
+        }
+    };
     get_token_response
-        .map(|resp| Ok(resp))
-        .unwrap_or(Err("Bad things".into()))
+        .map(Ok)
+        .unwrap_or_else(|| Err("Could not retrieve HA access token".into()))
 }
 
-fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
+fn start_ws(config: &YamlConfig, access_token: String) -> Result<WsLongLivedAccessTokenResponse> {
     let ws_url = format!("ws://{}/api/websocket", config.ha.host);
     let (mut socket, _) = connect(Url::parse(ws_url.as_str()).unwrap()).expect("Can't connect");
 
     socket.read_message().expect("Error reading message");
     let req = WsAuthRequest {
         auth_type: "auth".to_string(),
-        access_token: config.ha.access_token.as_ref().unwrap().to_string(),
+        access_token,
     };
 
     let req_as_str = Message::Text(serde_json::to_string(&req)?);
-    socket.write_message(req_as_str.into()).unwrap();
+    socket.write_message(req_as_str).unwrap();
 
     socket.read_message().expect("Error reading message");
 
@@ -133,7 +124,7 @@ fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
     };
 
     let req2_as_str = Message::Text(serde_json::to_string(&req2)?);
-    socket.write_message(req2_as_str.into()).unwrap();
+    socket.write_message(req2_as_str).unwrap();
 
     let msg3 = socket.read_message().expect("Error reading message");
 
@@ -143,7 +134,7 @@ fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
     if response.success {
         Ok(response)
     } else {
-        Err("Could not get long lived token from websocket".into())
+        Err("Could not get long lived token from websocket (perhaps one already exists for halcyon in home assistant)".into())
     }
 }
 
@@ -155,10 +146,7 @@ impl YamlConfig {
                     device_id: Some(Uuid::new_v4().to_string()),
                     ..self.ha
                 };
-                let config = YamlConfig {
-                    ha: ha_config,
-                    ..self
-                };
+                let config = YamlConfig { ha: ha_config };
                 let new_config_str = serde_yaml::to_string(&config)?;
                 let mut f = std::fs::OpenOptions::new()
                     .write(true)
@@ -173,45 +161,16 @@ impl YamlConfig {
         Ok(new_config)
     }
 
-    pub async fn update_refresh_token_if_needed(self, file_name: &str) -> Result<Self> {
-        let new_config = match self.ha.refresh_token {
-            None => {
-                let access_token_resp = wait_for_token(&self).await?;
-                let ha_config = HaConfig {
-                    refresh_token: Some(access_token_resp.refresh_token),
-                    access_token: Some(access_token_resp.access_token),
-                    ..self.ha
-                };
-                let config = YamlConfig {
-                    ha: ha_config,
-                    ..self
-                };
-                let new_config_str = serde_yaml::to_string(&config)?;
-                let mut f = std::fs::OpenOptions::new()
-                    .write(true)
-                    .truncate(true)
-                    .open(file_name)?;
-                f.write_all(new_config_str.as_bytes())?;
-                println!("no refresh-token found in config, so we are making one for you");
-                config
-            }
-            Some(_) => self,
-        };
-        Ok(new_config)
-    }
-
-    pub fn update_long_lived_access_token_if_needed(self, file_name: &str) -> Result<Self> {
+    pub async fn update_long_lived_access_token_if_needed(self, file_name: &str) -> Result<Self> {
         let new_config = match self.ha.long_lived_token {
             None => {
-                let access_token_resp = start_ws(&self)?;
+                let access_token_resp = wait_for_token(&self).await?;
+                let long_lived_access_token_resp = start_ws(&self, access_token_resp.access_token)?;
                 let ha_config = HaConfig {
-                    long_lived_token: access_token_resp.result,
+                    long_lived_token: long_lived_access_token_resp.result,
                     ..self.ha
                 };
-                let config = YamlConfig {
-                    ha: ha_config,
-                    ..self
-                };
+                let config = YamlConfig { ha: ha_config };
                 let new_config_str = serde_yaml::to_string(&config)?;
                 let mut f = std::fs::OpenOptions::new()
                     .write(true)
@@ -228,6 +187,7 @@ impl YamlConfig {
         Ok(new_config)
     }
 }
+
 pub fn read_config_yml(file_name: &str) -> Result<YamlConfig> {
     let f = std::fs::File::open(file_name)?;
     let config: YamlConfig = serde_yaml::from_reader(f)?;

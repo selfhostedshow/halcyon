@@ -2,9 +2,8 @@ mod config;
 mod ha_api;
 
 use clap::{App, Arg};
-use platform_info::PlatformInfo;
+use platform_info::{PlatformInfo, Uname};
 use std::error;
-
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -44,10 +43,20 @@ async fn command_setup(_args: &clap::ArgMatches<'_>) -> Result<()> {
     let platform_info = PlatformInfo::new()?;
     let config = config::read_config_yml(config_file)?
         .update_device_id_if_needed(config_file)?
-        .update_refresh_token_if_needed(config_file)
-        .await?
-        .update_long_lived_access_token_if_needed(config_file)?;
+        .update_long_lived_access_token_if_needed(config_file)
+        .await?;
 
-    ha_api::register_machine(&config, &platform_info).await?;
+    let states = ha_api::get_api_states(&config).await?;
+    let name = platform_info.nodename().to_string();
+    let maybe_current_device_state = states
+        .into_iter()
+        .find(|r| r.attributes.friendly_name.as_deref().unwrap_or("") == name);
+
+    match maybe_current_device_state {
+        None => {
+            ha_api::register_machine(&config, &platform_info).await?;
+        }
+        Some(_) => println!("Device {} is already registered on Home Assistant", name),
+    }
     Ok(())
 }
