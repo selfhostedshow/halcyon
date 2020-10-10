@@ -12,10 +12,6 @@ use crate::ha_api::GetAccessTokenResponse;
 use std::collections::HashMap;
 use url::Url;
 
-use std::net::TcpListener;
-use std::thread::spawn;
-use tungstenite::server::accept;
-
 use tungstenite::{connect, Message};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -65,8 +61,8 @@ type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenResponse> {
     let server = Server::http("0.0.0.0:8000").unwrap();
-    let mut getTokenResponse: Option<GetAccessTokenResponse> = None;
-    println!("Open {}/auth/authorize?client_id=http%3A%2F%2Flocalhost%3A8000&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fcallback in your browser", config.ha.host.as_str());
+    let mut get_token_response: Option<GetAccessTokenResponse> = None;
+    println!("Open http://{}/auth/authorize?client_id=http%3A%2F%2Flocalhost%3A8000&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fcallback in your browser", config.ha.host.as_str());
     loop {
         // blocks until the next request is received
         let request = match server.recv() {
@@ -76,7 +72,6 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
                 break;
             }
         };
-        println!("request {:?}", request);
         let url = format!("http://localhost:8000{}", request.url());
         let query_params: HashMap<_, _> = Url::parse(url.as_str())
             .unwrap()
@@ -87,14 +82,14 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
             Some(code) => {
                 request.respond(Response::from_string(
                     "Halcyon now authenticated to Home Assistant. You can close this page now.",
-                ));
+                ))?;
                 let either = ha_api::get_access_token(config, code.to_string()).await?;
                 match either {
-                    either::Left(terr) => {
-                        getTokenResponse = None;
+                    either::Left(_) => {
+                        get_token_response = None;
                     }
                     either::Right(succ) => {
-                        getTokenResponse = Some(succ);
+                        get_token_response = Some(succ);
                     }
                 }
             }
@@ -104,24 +99,22 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
                         "Something went wrong with authenticating Halcyon with Home Assistant",
                     )
                     .with_status_code(500),
-                );
-                getTokenResponse = None;
+                )?;
+                get_token_response = None;
             }
         }
         break;
     }
-    getTokenResponse
+    get_token_response
         .map(|resp| Ok(resp))
         .unwrap_or(Err("Bad things".into()))
 }
 
 fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
-    let ws_url = format!("ws://nuc-ubuntu.local:8123/api/websocket");
-    let (mut socket, response) =
-        connect(Url::parse(ws_url.as_str()).unwrap()).expect("Can't connect");
+    let ws_url = format!("ws://{}/api/websocket", config.ha.host);
+    let (mut socket, _) = connect(Url::parse(ws_url.as_str()).unwrap()).expect("Can't connect");
 
-    let msg = socket.read_message().expect("Error reading message");
-    //println!("Received {}", msg);
+    socket.read_message().expect("Error reading message");
     let req = WsAuthRequest {
         auth_type: "auth".to_string(),
         access_token: config.ha.access_token.as_ref().unwrap().to_string(),
@@ -130,8 +123,7 @@ fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
     let req_as_str = Message::Text(serde_json::to_string(&req)?);
     socket.write_message(req_as_str.into()).unwrap();
 
-    let msg2 = socket.read_message().expect("Error reading message");
-    //println!("Received {}", msg2);
+    socket.read_message().expect("Error reading message");
 
     let req2 = WsLongLivedAccessTokenRequest {
         id: 11,
@@ -144,11 +136,9 @@ fn start_ws(config: &YamlConfig) -> Result<WsLongLivedAccessTokenResponse> {
     socket.write_message(req2_as_str.into()).unwrap();
 
     let msg3 = socket.read_message().expect("Error reading message");
-    println!("Received {}", msg3);
 
     let response: WsLongLivedAccessTokenResponse =
         serde_json::from_str(msg3.into_text().unwrap().as_str())?;
-    println!("Response {:?}", response);
 
     if response.success {
         Ok(response)
@@ -214,7 +204,6 @@ impl YamlConfig {
         let new_config = match self.ha.long_lived_token {
             None => {
                 let access_token_resp = start_ws(&self)?;
-                println!("access token resp {:?}", access_token_resp);
                 let ha_config = HaConfig {
                     long_lived_token: access_token_resp.result,
                     ..self.ha

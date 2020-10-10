@@ -54,19 +54,13 @@ pub async fn get_access_token(
     config: &YamlConfig,
     code: String,
 ) -> Result<Either<GetAccessTokenError, GetAccessTokenResponse>> {
-    let param = [(
-        "grant_type",
-        "authorization_code",
-        ("code", code.as_str()),
-        ("client_id", "localhost:8000"),
-    )];
     let request = GetAccessTokenRequest {
         grant_type: "authorization_code".to_string(),
         code,
         client_id: "http://localhost:8000".to_string(),
     };
     let resp = Client::new()
-        .post(format!("{}/auth/token", config.ha.host).as_str())
+        .post(format!("http://{}/auth/token", config.ha.host).as_str())
         .form(&request)
         .send()
         .await?;
@@ -75,7 +69,6 @@ pub async fn get_access_token(
         "200" => Right(resp.json::<GetAccessTokenResponse>().await?),
         _ => Left(resp.json::<GetAccessTokenError>().await?),
     };
-    println!("either {:?}", either);
     Ok(either)
 }
 
@@ -96,7 +89,7 @@ pub async fn register_machine(
         supports_encryption: false,
     };
 
-    let endpoint = format!("{}/api/mobile_app/registrations", config.ha.host);
+    let endpoint = format!("http://{}/api/mobile_app/registrations", config.ha.host);
     let resp = Client::new()
         .post(endpoint.as_str())
         .header(

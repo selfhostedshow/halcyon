@@ -5,19 +5,6 @@ use clap::{App, Arg};
 use platform_info::PlatformInfo;
 use std::error;
 
-use tiny_http::{Response, Server};
-
-use crate::config::YamlConfig;
-use std::collections::HashMap;
-use url::Url;
-
-use std::net::TcpListener;
-use std::thread::spawn;
-use tungstenite::server::accept;
-
-use tungstenite::{connect, Message};
-
-use serde::{Deserialize, Serialize};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -61,7 +48,6 @@ async fn command_setup(_args: &clap::ArgMatches<'_>) -> Result<()> {
         .await?
         .update_long_lived_access_token_if_needed(config_file)?;
 
-    let access_token = config.ha.access_token.as_ref().unwrap().as_str();
     ha_api::register_machine(&config, &platform_info).await?;
     Ok(())
 }
