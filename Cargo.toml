@@ -15,3 +15,7 @@ tokio = { version = "0.2", features = ["full"] }
 serde_json = "1.0"
 serde_yaml = "0.8.13"
 uuid = { version = "0.8", features = ["v4"] }
+tiny_http = "0.6"
+url = "2.1.1"
+either = "1.6.1"
+tungstenite = "0.11.1"

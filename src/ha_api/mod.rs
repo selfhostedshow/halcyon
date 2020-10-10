@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
-use std::error;
-use platform_info::{PlatformInfo, Uname};
 use crate::config::YamlConfig;
-
+use either::*;
+use platform_info::{PlatformInfo, Uname};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::error;
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -20,7 +20,7 @@ struct RegisterDeviceRequest {
     model: String,
     os_name: String,
     os_version: String,
-    supports_encryption: bool
+    supports_encryption: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,10 +28,61 @@ pub struct RegisterDeviceResponse {
     cloud_hook_url: Option<String>,
     remote_ui_url: Option<String>,
     secret: Option<String>,
-    webhook_id: String
+    webhook_id: String,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetAccessTokenRequest {
+    grant_type: String,
+    code: String,
+    client_id: String,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetAccessTokenResponse {
+    pub access_token: String,
+    pub expires_in: u32,
+    pub refresh_token: String,
+    pub token_type: String,
 }
 
-pub async fn register_machine(config: &YamlConfig, platform_info: &PlatformInfo) -> Result<RegisterDeviceResponse> {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GetAccessTokenError {
+    error: String,
+    error_description: String,
+}
+
+pub async fn get_access_token(
+    config: &YamlConfig,
+    code: String,
+) -> Result<Either<GetAccessTokenError, GetAccessTokenResponse>> {
+    let param = [(
+        "grant_type",
+        "authorization_code",
+        ("code", code.as_str()),
+        ("client_id", "localhost:8000"),
+    )];
+    let request = GetAccessTokenRequest {
+        grant_type: "authorization_code".to_string(),
+        code,
+        client_id: "http://localhost:8000".to_string(),
+    };
+    let resp = Client::new()
+        .post(format!("{}/auth/token", config.ha.host).as_str())
+        .form(&request)
+        .send()
+        .await?;
+
+    let either = match resp.status().as_str() {
+        "200" => Right(resp.json::<GetAccessTokenResponse>().await?),
+        _ => Left(resp.json::<GetAccessTokenError>().await?),
+    };
+    println!("either {:?}", either);
+    Ok(either)
+}
+
+pub async fn register_machine(
+    config: &YamlConfig,
+    platform_info: &PlatformInfo,
+) -> Result<RegisterDeviceResponse> {
     let request = RegisterDeviceRequest {
         device_id: config.ha.device_id.as_ref().unwrap().to_string(),
         app_id: String::from("HalcyonAppId"),
@@ -42,14 +93,19 @@ pub async fn register_machine(config: &YamlConfig, platform_info: &PlatformInfo)
         model: String::from(platform_info.machine()),
         os_name: String::from(platform_info.sysname()),
         os_version: String::from(platform_info.version()),
-        supports_encryption: false
+        supports_encryption: false,
     };
 
+    let endpoint = format!("{}/api/mobile_app/registrations", config.ha.host);
     let resp = Client::new()
-        .post(&config.ha.host)
-        .header("Authorization", format!("Bearer {}", config.ha.token))
+        .post(endpoint.as_str())
+        .header(
+            "Authorization",
+            format!("Bearer {}", config.ha.long_lived_token.as_ref().unwrap()),
+        )
         .json(&request)
-        .send().await?;
+        .send()
+        .await?;
 
     let r: RegisterDeviceResponse = resp.json().await?;
     println!("{:?}", r);
