@@ -11,6 +11,12 @@ use std::collections::HashMap;
 use url::Url;
 
 use tungstenite::{connect, Message};
+use serde_json::Value;
+
+// HA creates tokens for 10 years so we do the same
+const LONG_LIVED_TOKEN_VALID_FOR: u32 = 3652425;
+
+const LONG_LIVED_TOKEN_WS_COMMAND_ID: u32 = 11;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HaConfig {
@@ -101,41 +107,66 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
         .unwrap_or_else(|| Err("Could not retrieve HA access token".into()))
 }
 
-fn start_ws(config: &YamlConfig, access_token: String) -> Result<WsLongLivedAccessTokenResponse> {
+fn get_long_lived_token_from_ws(config: &YamlConfig, access_token: String) -> Result<WsLongLivedAccessTokenResponse> {
     let ws_url = format!("ws://{}/api/websocket", config.ha.host);
-    let (mut socket, _) = connect(Url::parse(ws_url.as_str()).unwrap()).expect("Can't connect");
+    let url = Url::parse(ws_url.as_str())?;
+    let (mut socket, _) = connect(url)?;
 
-    socket.read_message().expect("Error reading message");
-    let req = WsAuthRequest {
-        auth_type: "auth".to_string(),
-        access_token,
-    };
+    let mut maybe_long_lived_token_response: Option<WsLongLivedAccessTokenResponse> = None;
+    loop {
+        let msg = socket.read_message()?.into_text()?;
+        let msg_as_json: Value = serde_json::from_str(msg.as_str())?;
+        let maybe_response_type = msg_as_json.get("type").and_then(|response_type| response_type.as_str());
 
-    let req_as_str = Message::Text(serde_json::to_string(&req)?);
-    socket.write_message(req_as_str).unwrap();
+        match maybe_response_type {
+            Some(response_type) => {
+                match response_type {
+                    "auth_required" => {
+                        let req = WsAuthRequest {
+                            auth_type: "auth".to_string(),
+                            access_token: access_token.clone(),
+                        };
 
-    socket.read_message().expect("Error reading message");
+                        let req_as_str = Message::Text(serde_json::to_string(&req)?);
+                        socket.write_message(req_as_str)?;
+                    }
+                    "auth_ok" => {
+                        let req = WsLongLivedAccessTokenRequest {
+                            id: LONG_LIVED_TOKEN_WS_COMMAND_ID,
+                            command_type: "auth/long_lived_access_token".to_string(),
+                            client_name: "Halcyon".to_string(),
+                            lifespan: LONG_LIVED_TOKEN_VALID_FOR,
+                        };
 
-    let req2 = WsLongLivedAccessTokenRequest {
-        id: 11,
-        command_type: "auth/long_lived_access_token".to_string(),
-        client_name: "Halcyon".to_string(),
-        lifespan: 365,
-    };
+                        let req_as_str = Message::Text(serde_json::to_string(&req)?);
+                        socket.write_message(req_as_str).unwrap();
+                    }
+                    "result" => {
+                        let response: WsLongLivedAccessTokenResponse =
+                            serde_json::from_str(msg.as_str())?;
 
-    let req2_as_str = Message::Text(serde_json::to_string(&req2)?);
-    socket.write_message(req2_as_str).unwrap();
-
-    let msg3 = socket.read_message().expect("Error reading message");
-
-    let response: WsLongLivedAccessTokenResponse =
-        serde_json::from_str(msg3.into_text().unwrap().as_str())?;
-
-    if response.success {
-        Ok(response)
-    } else {
-        Err("Could not get long lived token from websocket (perhaps one already exists for halcyon in home assistant)".into())
+                        maybe_long_lived_token_response = Some(response);
+                        break;
+                    }
+                    "auth_invalid" => {
+                        let error_msg = msg_as_json.get("message").and_then(|error| error.as_str()).unwrap_or("");
+                        println!("Error authorizing websocket {}", error_msg);
+                        break;
+                    }
+                    _ => {
+                        println!("Unexpected response from websocket during authorization {}", msg)
+                    }
+                }
+            }
+            None => {
+                println!("Unexpected response from websocket {}", msg);
+                break;
+            }
+        }
     }
+    maybe_long_lived_token_response
+        .map(Ok)
+        .unwrap_or_else(|| Err("Could not retrieve long lived token from websocket (perhaps it already has been created for Halcyon?)".into()))
 }
 
 impl YamlConfig {
@@ -165,7 +196,7 @@ impl YamlConfig {
         let new_config = match self.ha.long_lived_token {
             None => {
                 let access_token_resp = wait_for_token(&self).await?;
-                let long_lived_access_token_resp = start_ws(&self, access_token_resp.access_token)?;
+                let long_lived_access_token_resp = get_long_lived_token_from_ws(&self, access_token_resp.access_token)?;
                 let ha_config = HaConfig {
                     long_lived_token: long_lived_access_token_resp.result,
                     ..self.ha
