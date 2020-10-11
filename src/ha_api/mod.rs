@@ -1,5 +1,4 @@
 use crate::config::YamlConfig;
-use either::*;
 use platform_info::{PlatformInfo, Uname};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -59,10 +58,7 @@ pub struct GetAccessTokenError {
     error_description: String,
 }
 
-pub async fn get_access_token(
-    config: &YamlConfig,
-    code: String,
-) -> Result<Either<GetAccessTokenError, GetAccessTokenResponse>> {
+pub async fn get_access_token(config: &YamlConfig, code: String) -> Result<GetAccessTokenResponse> {
     let request = GetAccessTokenRequest {
         grant_type: "authorization_code".to_string(),
         code,
@@ -74,25 +70,33 @@ pub async fn get_access_token(
         .send()
         .await?;
 
-    let either = match resp.status().as_str() {
-        "200" => Right(resp.json::<GetAccessTokenResponse>().await?),
-        _ => Left(resp.json::<GetAccessTokenError>().await?),
-    };
-    Ok(either)
+    match resp.status().as_str() {
+        "200" => Ok(resp.json::<GetAccessTokenResponse>().await?),
+        _ => {
+            let error = resp.json::<GetAccessTokenError>().await?;
+            Err(format!(
+                "Error getting access token from HA Error: {} Details: {}",
+                error.error, error.error_description
+            )
+            .into())
+        }
+    }
 }
 
 pub async fn get_api_states(config: &YamlConfig) -> Result<Vec<HaEntityState>> {
     let endpoint = format!("http://{}/api/states", config.ha.host);
+    let long_lived_token = config
+        .ha
+        .long_lived_token
+        .as_deref()
+        .ok_or_else(|| "expected long lived token to exist")?;
     let resp = Client::new()
         .get(endpoint.as_str())
-        .header(
-            "Authorization",
-            format!("Bearer {}", config.ha.long_lived_token.as_ref().unwrap()),
-        )
+        .header("Authorization", format!("Bearer {}", long_lived_token))
         .send()
         .await?;
 
-    let api_states: Vec<HaEntityState> = resp.json().await?;
+    let api_states = resp.json::<Vec<HaEntityState>>().await?;
     Ok(api_states)
 }
 

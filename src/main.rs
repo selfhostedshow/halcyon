@@ -37,9 +37,9 @@ async fn main() -> Result<()> {
     };
     Ok(())
 }
-async fn command_setup(_args: &clap::ArgMatches<'_>) -> Result<()> {
+async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     println!("Welcome to setup");
-    let config_file = _args.value_of("config").unwrap_or("config.yml");
+    let config_file = args.value_of("config").unwrap_or("config.yml");
     let platform_info = PlatformInfo::new()?;
     let config = config::read_config_yml(config_file)?
         .update_device_id_if_needed(config_file)?
