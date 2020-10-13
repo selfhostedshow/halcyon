@@ -20,9 +20,14 @@
                 }
             },
             "args": [
-                "setup"
+                "service"
             ],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "HALCYON_CONFIG_DIR": "${workspaceFolder}/halcyon.yaml.sample",
+                "HALCYON_SOCK_PATH": "${workspaceFolder}/halcyon.sock",
+            },
+            "stdio": ["debug-input.txt", null, null]
         },
         {
             "type": "lldb",
