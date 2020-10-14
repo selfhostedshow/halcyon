@@ -6,7 +6,7 @@ use uuid::Uuid;
 use tiny_http::{Response, Server};
 
 use crate::ha_api;
-use crate::ha_api::GetAccessTokenResponse;
+use crate::ha_api::{ GetAccessTokenResponse, RegisterDeviceResponse};
 use std::collections::HashMap;
 use url::Url;
 
@@ -27,6 +27,8 @@ pub struct HaConfig {
     pub long_lived_token: Option<String>,
     #[serde(rename = "device-id")]
     pub device_id: Option<String>,
+    #[serde(rename = "webhook-id")]
+    pub webhook_id: Option<String>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -229,6 +231,22 @@ impl YamlConfig {
                 println!(
                     "no long lived access token found in config, so we are making one for you"
                 );
+                write_new_config(&config, file_name)?;
+                config
+            }
+            Some(_) => self,
+        };
+        Ok(new_config)
+    }
+
+    pub fn update_webhook_id_if_needed(self, file_name: &str, register_device_response: &RegisterDeviceResponse) -> Result<Self> {
+        let new_config = match self.ha.webhook_id {
+            None => {
+                let ha_config = HaConfig {
+                    webhook_id: Some(register_device_response.webhook_id.clone()),
+                    ..self.ha
+                };
+                let config = YamlConfig { ha: ha_config };
                 write_new_config(&config, file_name)?;
                 config
             }

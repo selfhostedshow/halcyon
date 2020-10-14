@@ -4,6 +4,7 @@ mod ha_api;
 use clap::{App, Arg};
 use platform_info::{PlatformInfo, Uname};
 use std::error;
+use crate::ha_api::{SensorRegistrationRequest, SensorRegistrationData};
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -54,7 +55,36 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
 
     match maybe_current_device_state {
         None => {
-            ha_api::register_machine(&config, &platform_info).await?;
+            let register_match_resp = ha_api::register_machine(&config, &platform_info).await?;
+            let new_config = config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
+            let register_sensor_request = SensorRegistrationRequest {
+                r#type: "register_sensor".to_string(),
+                data: SensorRegistrationData {
+                    device_class: Some(String::from("battery")),
+                    icon: String::from("mdi:die-multiple"),
+                    name: String::from("Sample Sensor"),
+                    state: String::from("init"),
+                    r#type: String::from("sensor"),
+                    unique_id: String::from("sensor123"),
+                    unit_of_measurement: String::from("none"),
+                    attributes: std::collections::HashMap::new(),
+                }
+            };
+            let long_lived_token = new_config
+                .ha
+                .long_lived_token
+                .as_deref()
+                .ok_or_else(|| "expected long lived token to exist")?;
+
+            let webhook_id = new_config
+                .ha
+                .webhook_id
+                .as_deref()
+                .ok_or_else(|| "expected webhook_id to exist")?;
+
+            let host = new_config.ha.host;
+
+            ha_api::register_sensor(&register_sensor_request, webhook_id, host.as_str(), long_lived_token).await?;
         }
         Some(_) => println!("Device {} is already registered on Home Assistant", name),
     }

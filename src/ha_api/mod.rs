@@ -33,10 +33,10 @@ struct RegisterDeviceRequest {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterDeviceResponse {
-    cloud_hook_url: Option<String>,
-    remote_ui_url: Option<String>,
-    secret: Option<String>,
-    webhook_id: String,
+    pub cloud_hook_url: Option<String>,
+    pub remote_ui_url: Option<String>,
+    pub secret: Option<String>,
+    pub webhook_id: String,
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct GetAccessTokenRequest {
@@ -56,6 +56,24 @@ pub struct GetAccessTokenResponse {
 pub struct GetAccessTokenError {
     error: String,
     error_description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SensorRegistrationRequest {
+    pub r#type: String,
+    pub data: SensorRegistrationData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SensorRegistrationData {
+    pub device_class: Option<String>,
+    pub icon: String,
+    pub name: String,
+    pub state: String,
+    pub r#type: String,
+    pub unique_id: String,
+    pub unit_of_measurement: String,
+    pub attributes: std::collections::HashMap<String, String>,
 }
 
 pub async fn get_access_token(config: &YamlConfig, code: String) -> Result<GetAccessTokenResponse> {
@@ -131,4 +149,27 @@ pub async fn register_machine(
     let r: RegisterDeviceResponse = resp.json().await?;
     println!("{:?}", r);
     Ok(r)
+}
+
+pub async fn register_sensor(
+    request: &SensorRegistrationRequest,
+    webhook_id: &str,
+    host_url: &str,
+    access_token: &str
+) -> Result<()> {
+    let endpoint = format!("http://{}/api/webhook/{}", host_url, webhook_id);
+
+    let response = Client::new()
+        .post(endpoint.as_str())
+        .header(
+            "Authorization",
+            format!("Bearer {}", access_token),
+        )
+        .json(&request)
+        .send()
+        .await?;
+
+    let resp_json =  response.text().await?;
+    println!("Register sensor response {}", resp_json);
+    Ok(())
 }
