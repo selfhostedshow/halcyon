@@ -5,13 +5,14 @@ use uuid::Uuid;
 
 use tiny_http::{Response, Server};
 
-use crate::ha_api;
-use crate::ha_api::{ GetAccessTokenResponse, RegisterDeviceResponse};
 use std::collections::HashMap;
 use url::Url;
 
 use serde_json::Value;
 use tungstenite::{connect, Message};
+
+use ha_api::types::{GetAccessTokenResponse, RegisterDeviceResponse};
+use ha_api::HomeAssistantAPI;
 
 // HA creates tokens for 10 years so we do the same
 const LONG_LIVED_TOKEN_VALID_FOR: u32 = 365;
@@ -28,7 +29,7 @@ pub struct HaConfig {
     #[serde(rename = "device-id")]
     pub device_id: Option<String>,
     #[serde(rename = "webhook-id")]
-    pub webhook_id: Option<String>
+    pub webhook_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -63,7 +64,10 @@ pub struct WsLongLivedAccessTokenResponse {
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
-pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenResponse> {
+pub async fn wait_for_token(
+    config: &YamlConfig,
+    ha_api: &HomeAssistantAPI,
+) -> Result<GetAccessTokenResponse> {
     let maybe_server = Server::http(LOCAL_SERVER_HOST);
     match maybe_server {
         Ok(server) => {
@@ -80,7 +84,7 @@ pub async fn wait_for_token(config: &YamlConfig) -> Result<GetAccessTokenRespons
                     match query_params.get("code") {
                         Some(code) => {
                             let access_token_resp_result =
-                                ha_api::get_access_token(config, code.to_string()).await;
+                                ha_api.access_token(code.to_string()).await;
                             match access_token_resp_result {
                                 Ok(resp) => {
                                     request.respond(Response::from_string(
@@ -217,10 +221,14 @@ impl YamlConfig {
         Ok(new_config)
     }
 
-    pub async fn update_long_lived_access_token_if_needed(self, file_name: &str) -> Result<Self> {
+    pub async fn update_long_lived_access_token_if_needed(
+        self,
+        ha_api: &HomeAssistantAPI,
+        file_name: &str,
+    ) -> Result<Self> {
         let new_config = match self.ha.long_lived_token {
             None => {
-                let access_token_resp = wait_for_token(&self).await?;
+                let access_token_resp = wait_for_token(&self, ha_api).await?;
                 let long_lived_access_token_resp =
                     get_long_lived_token_from_ws(&self, access_token_resp.access_token)?;
                 let ha_config = HaConfig {
@@ -239,7 +247,11 @@ impl YamlConfig {
         Ok(new_config)
     }
 
-    pub fn update_webhook_id_if_needed(self, file_name: &str, register_device_response: &RegisterDeviceResponse) -> Result<Self> {
+    pub fn update_webhook_id_if_needed(
+        self,
+        file_name: &str,
+        register_device_response: &RegisterDeviceResponse,
+    ) -> Result<Self> {
         let new_config = match self.ha.webhook_id {
             None => {
                 let ha_config = HaConfig {

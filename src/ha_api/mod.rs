@@ -3,7 +3,7 @@ use platform_info::{PlatformInfo, Uname};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::error;
-
+/*
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -173,3 +173,5 @@ pub async fn register_sensor(
     println!("Register sensor response {}", resp_json);
     Ok(())
 }
+
+ */

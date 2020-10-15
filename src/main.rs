@@ -1,10 +1,12 @@
 mod config;
-mod ha_api;
 
 use clap::{App, Arg};
+use ha_api::types::{RegisterDeviceRequest, SensorRegistrationData, SensorRegistrationRequest};
+use ha_api::HomeAssistantAPI;
 use platform_info::{PlatformInfo, Uname};
 use std::error;
-use crate::ha_api::{SensorRegistrationRequest, SensorRegistrationData};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
@@ -42,12 +44,26 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     println!("Welcome to setup");
     let config_file = args.value_of("config").unwrap_or("config.yml");
     let platform_info = PlatformInfo::new()?;
-    let config = config::read_config_yml(config_file)?
-        .update_device_id_if_needed(config_file)?
-        .update_long_lived_access_token_if_needed(config_file)
+
+    let init_config =
+        config::read_config_yml(config_file)?.update_device_id_if_needed(config_file)?;
+
+    let init_ha_api = HomeAssistantAPI::single_instance(init_config.ha.host.clone());
+
+    let updated_config = init_config
+        .update_long_lived_access_token_if_needed(&init_ha_api, config_file)
         .await?;
 
-    let states = ha_api::get_api_states(&config).await?;
+    let access_token = updated_config
+        .ha
+        .long_lived_token
+        .as_ref()
+        .ok_or_else(|| "expected access token to exist")?;
+    //let webhook_id = updated_config.ha.webhook_id.as_ref().ok_or_else(|| "expected webhook_id to exist")?;
+
+    let updated_ha_api = init_ha_api.set_access_token(access_token.to_string());
+
+    let states = updated_ha_api.api_states().await?;
     let name = platform_info.nodename().to_string();
     let maybe_current_device_state = states
         .into_iter()
@@ -55,8 +71,21 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
 
     match maybe_current_device_state {
         None => {
-            let register_match_resp = ha_api::register_machine(&config, &platform_info).await?;
-            let new_config = config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
+            let request = RegisterDeviceRequest {
+                device_id: updated_config.ha.device_id.as_ref().unwrap().to_string(),
+                app_id: String::from("HalcyonAppId"),
+                app_name: String::from("Halcyon"),
+                app_version: String::from(VERSION),
+                device_name: String::from(platform_info.nodename()),
+                manufacturer: String::from("PC"),
+                model: String::from(platform_info.machine()),
+                os_name: String::from(platform_info.sysname()),
+                os_version: String::from(platform_info.version()),
+                supports_encryption: false,
+            };
+            let register_match_resp = updated_ha_api.register_machine(&request).await?;
+            let new_ha_api = updated_ha_api.set_webhook_id(register_match_resp.webhook_id.clone());
+            updated_config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
             let register_sensor_request = SensorRegistrationRequest {
                 r#type: "register_sensor".to_string(),
                 data: SensorRegistrationData {
@@ -68,23 +97,10 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
                     unique_id: String::from("sensor123"),
                     unit_of_measurement: String::from("none"),
                     attributes: std::collections::HashMap::new(),
-                }
+                },
             };
-            let long_lived_token = new_config
-                .ha
-                .long_lived_token
-                .as_deref()
-                .ok_or_else(|| "expected long lived token to exist")?;
 
-            let webhook_id = new_config
-                .ha
-                .webhook_id
-                .as_deref()
-                .ok_or_else(|| "expected webhook_id to exist")?;
-
-            let host = new_config.ha.host;
-
-            ha_api::register_sensor(&register_sensor_request, webhook_id, host.as_str(), long_lived_token).await?;
+            new_ha_api.register_sensor(&register_sensor_request).await?;
         }
         Some(_) => println!("Device {} is already registered on Home Assistant", name),
     }
