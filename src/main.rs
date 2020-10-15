@@ -59,7 +59,6 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
         .long_lived_token
         .as_ref()
         .ok_or_else(|| "expected access token to exist")?;
-    //let webhook_id = updated_config.ha.webhook_id.as_ref().ok_or_else(|| "expected webhook_id to exist")?;
 
     let updated_ha_api = init_ha_api.set_access_token(access_token.to_string());
 
