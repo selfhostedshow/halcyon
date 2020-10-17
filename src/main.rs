@@ -50,12 +50,19 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let mut config = config::read_config_yml(config_file)?;
     config.update_device_id_if_needed(config_file)?;
 
-    let mut ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string(), config.ha.long_lived_token.clone());
+    let mut ha_api = HomeAssistantAPI::new(
+        config.ha.host.clone(),
+        OAUTH_CLIENT_ID.to_string(),
+        config.ha.long_lived_token.clone(),
+    );
 
     config
-        .update_long_lived_access_token_if_needed(&mut ha_api, OAUTH_CLIENT_ID.to_string(), config_file)
+        .update_long_lived_access_token_if_needed(
+            &mut ha_api,
+            OAUTH_CLIENT_ID.to_string(),
+            config_file,
+        )
         .await?;
-
 
     let states = ha_api.api_states().await?;
     let name = platform_info.nodename().to_string();

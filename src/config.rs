@@ -76,9 +76,17 @@ pub async fn wait_for_token(
     let maybe_server = Server::http(LOCAL_SERVER_HOST);
     match maybe_server {
         Ok(server) => {
-            let query_prams = format!("client_id={}&redirect_uri=http://{}/callback", client_id, LOCAL_SERVER_HOST);
-            let query_params_encoded: String = utf8_percent_encode(&query_prams, FRAGMENT).collect();
-            println!("Open http://{}/auth/authorize?{} in your browser", config.ha.host.as_str(), query_params_encoded);
+            let query_prams = format!(
+                "client_id={}&redirect_uri=http://{}/callback",
+                client_id, LOCAL_SERVER_HOST
+            );
+            let query_params_encoded: String =
+                utf8_percent_encode(&query_prams, FRAGMENT).collect();
+            println!(
+                "Open http://{}/auth/authorize?{} in your browser",
+                config.ha.host.as_str(),
+                query_params_encoded
+            );
             // blocks until the next request is received
             let maybe_token_resp = match server.recv() {
                 Ok(request) => {
@@ -200,9 +208,7 @@ fn get_long_lived_token_from_ws(
         .ok_or_else(|| Box::from("Could not retrieve long lived token from websocket (perhaps it already has been created for Halcyon?)"))
 }
 
-
 impl YamlConfig {
-
     fn write_new_config(&self, file_name: &str) -> Result<()> {
         let new_config_str = serde_yaml::to_string(self)?;
         let mut f = std::fs::OpenOptions::new()
@@ -233,7 +239,7 @@ impl YamlConfig {
     ) -> Result<()> {
         match self.ha.long_lived_token {
             None => {
-                let access_token_resp = wait_for_token(&self,  client_id, ha_api).await?;
+                let access_token_resp = wait_for_token(&self, client_id, ha_api).await?;
                 let long_lived_access_token_resp =
                     get_long_lived_token_from_ws(&self, access_token_resp.access_token)?;
                 self.ha.long_lived_token = long_lived_access_token_resp.result;
