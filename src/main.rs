@@ -8,7 +8,7 @@ use std::error;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const OAUTH_CLIENT_ID: &str = "http://localhost:8000";
+const OAUTH_CLIENT_ID: &str = "http://127.0.0.1:8000";
 
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 

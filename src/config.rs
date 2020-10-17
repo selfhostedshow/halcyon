@@ -14,12 +14,16 @@ use tungstenite::{connect, Message};
 use ha_api::types::{GetAccessTokenResponse, RegisterDeviceResponse};
 use ha_api::HomeAssistantAPI;
 
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+
+const FRAGMENT: &AsciiSet = &CONTROLS.add(b':').add(b'/');
+
 // HA creates tokens for 10 years so we do the same
 const LONG_LIVED_TOKEN_VALID_FOR: u32 = 365;
 
 const LONG_LIVED_TOKEN_WS_COMMAND_ID: u32 = 11;
 
-const LOCAL_SERVER_HOST: &str = "0.0.0.0:8000";
+const LOCAL_SERVER_HOST: &str = "127.0.0.1:8000";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HaConfig {
@@ -72,7 +76,9 @@ pub async fn wait_for_token(
     let maybe_server = Server::http(LOCAL_SERVER_HOST);
     match maybe_server {
         Ok(server) => {
-            println!("Open http://{}/auth/authorize?client_id=http%3A%2F%2Flocalhost%3A8000&redirect_uri=http%3A%2F%2Flocalhost%3A8000%2Fcallback in your browser", config.ha.host.as_str());
+            let query_prams = format!("client_id={}&redirect_uri=http://{}/callback", client_id, LOCAL_SERVER_HOST);
+            let query_params_encoded: String = utf8_percent_encode(&query_prams, FRAGMENT).collect();
+            println!("Open http://{}/auth/authorize?{} in your browser", config.ha.host.as_str(), query_params_encoded);
             // blocks until the next request is received
             let maybe_token_resp = match server.recv() {
                 Ok(request) => {
