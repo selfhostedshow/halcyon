@@ -18,7 +18,6 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b':').add(b'/');
 
-// HA creates tokens for 10 years so we do the same
 const LONG_LIVED_TOKEN_VALID_FOR: u32 = 365;
 
 const LONG_LIVED_TOKEN_WS_COMMAND_ID: u32 = 11;
