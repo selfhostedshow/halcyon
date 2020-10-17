@@ -19,4 +19,4 @@ tiny_http = "0.6"
 url = "2.1.1"
 tungstenite = "0.11.1"
 percent-encoding = "2.1.0"
-ha_api = { path = "/home/kyle/code/rust/ha_api"}
+ha_api = { git = "https://github.com/kylepotts/ha_api", branch = "kylep-add-as-mobile-app"}
