@@ -8,6 +8,8 @@ use std::error;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+const OAUTH_CLIENT_ID: &str = "http://localhost:8000";
+
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 #[tokio::main]
@@ -45,24 +47,17 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let config_file = args.value_of("config").unwrap_or("config.yml");
     let platform_info = PlatformInfo::new()?;
 
-    let init_config =
-        config::read_config_yml(config_file)?.update_device_id_if_needed(config_file)?;
+    let mut config = config::read_config_yml(config_file)?;
+    config.update_device_id_if_needed(config_file)?;
 
-    let init_ha_api = HomeAssistantAPI::single_instance(init_config.ha.host.clone());
+    let mut ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string(), config.ha.long_lived_token.clone());
 
-    let updated_config = init_config
-        .update_long_lived_access_token_if_needed(&init_ha_api, config_file)
+    config
+        .update_long_lived_access_token_if_needed(&mut ha_api, OAUTH_CLIENT_ID.to_string(), config_file)
         .await?;
 
-    let access_token = updated_config
-        .ha
-        .long_lived_token
-        .as_ref()
-        .ok_or_else(|| "expected access token to exist")?;
 
-    let updated_ha_api = init_ha_api.set_access_token(access_token.to_string());
-
-    let states = updated_ha_api.api_states().await?;
+    let states = ha_api.api_states().await?;
     let name = platform_info.nodename().to_string();
     let maybe_current_device_state = states
         .into_iter()
@@ -71,7 +66,7 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     match maybe_current_device_state {
         None => {
             let request = RegisterDeviceRequest {
-                device_id: updated_config.ha.device_id.as_ref().unwrap().to_string(),
+                device_id: config.ha.device_id.as_ref().unwrap().to_string(),
                 app_id: String::from("HalcyonAppId"),
                 app_name: String::from("Halcyon"),
                 app_version: String::from(VERSION),
@@ -82,9 +77,10 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
                 os_version: String::from(platform_info.version()),
                 supports_encryption: false,
             };
-            let register_match_resp = updated_ha_api.register_machine(&request).await?;
-            let new_ha_api = updated_ha_api.set_webhook_id(register_match_resp.webhook_id.clone());
-            updated_config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
+            println!("Registering Machine");
+            let register_match_resp = ha_api.register_machine(&request).await?;
+            config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
+            println!("Successfully Registered Device!");
             let register_sensor_request = SensorRegistrationRequest {
                 r#type: "register_sensor".to_string(),
                 data: SensorRegistrationData {
@@ -99,9 +95,12 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
                 },
             };
 
-            new_ha_api.register_sensor(&register_sensor_request).await?;
+            println!("Registering sensors");
+            ha_api.register_sensor(&register_sensor_request).await?;
+            println!("Successfully Registered Sensors")
         }
         Some(_) => println!("Device {} is already registered on Home Assistant", name),
     }
+
     Ok(())
 }

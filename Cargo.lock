@@ -344,7 +344,6 @@ dependencies = [
 [[package]]
 name = "ha_api"
 version = "0.1.0"
-source = "git+https://github.com/kylepotts/ha_api?branch=kylep-add-as-mobile-app#85561ca49e69245c8d9188fe760c6d1b270189a9"
 dependencies = [
  "futures",
  "reqwest",

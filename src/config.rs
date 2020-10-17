@@ -66,7 +66,8 @@ type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 pub async fn wait_for_token(
     config: &YamlConfig,
-    ha_api: &HomeAssistantAPI,
+    client_id: String,
+    ha_api: &mut HomeAssistantAPI,
 ) -> Result<GetAccessTokenResponse> {
     let maybe_server = Server::http(LOCAL_SERVER_HOST);
     match maybe_server {
@@ -84,7 +85,7 @@ pub async fn wait_for_token(
                     match query_params.get("code") {
                         Some(code) => {
                             let access_token_resp_result =
-                                ha_api.access_token(code.to_string()).await;
+                                ha_api.access_token(code.to_string(), client_id).await;
                             match access_token_resp_result {
                                 Ok(resp) => {
                                     request.respond(Response::from_string(
@@ -193,78 +194,66 @@ fn get_long_lived_token_from_ws(
         .ok_or_else(|| Box::from("Could not retrieve long lived token from websocket (perhaps it already has been created for Halcyon?)"))
 }
 
-fn write_new_config(config: &YamlConfig, file_name: &str) -> Result<()> {
-    let new_config_str = serde_yaml::to_string(&config)?;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(file_name)?;
-    f.write_all(new_config_str.as_bytes())?;
-    Ok(())
-}
 
 impl YamlConfig {
-    pub fn update_device_id_if_needed(self, file_name: &str) -> Result<Self> {
-        let new_config = match self.ha.device_id {
+
+    fn write_new_config(&self, file_name: &str) -> Result<()> {
+        let new_config_str = serde_yaml::to_string(self)?;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(file_name)?;
+        f.write_all(new_config_str.as_bytes())?;
+        Ok(())
+    }
+
+    pub fn update_device_id_if_needed(&mut self, file_name: &str) -> Result<()> {
+        match self.ha.device_id {
             None => {
-                let ha_config = HaConfig {
-                    device_id: Some(Uuid::new_v4().to_string()),
-                    ..self.ha
-                };
-                let config = YamlConfig { ha: ha_config };
+                self.ha.device_id = Some(Uuid::new_v4().to_string());
                 println!("no device-id found in config, so we are making one for you");
-                write_new_config(&config, file_name)?;
-                config
+                self.write_new_config(file_name)?;
+                Ok(())
             }
-            Some(_) => self,
-        };
-        Ok(new_config)
+            Some(_) => Ok(()),
+        }
     }
 
     pub async fn update_long_lived_access_token_if_needed(
-        self,
-        ha_api: &HomeAssistantAPI,
+        &mut self,
+        ha_api: &mut HomeAssistantAPI,
+        client_id: String,
         file_name: &str,
-    ) -> Result<Self> {
-        let new_config = match self.ha.long_lived_token {
+    ) -> Result<()> {
+        match self.ha.long_lived_token {
             None => {
-                let access_token_resp = wait_for_token(&self, ha_api).await?;
+                let access_token_resp = wait_for_token(&self,  client_id, ha_api).await?;
                 let long_lived_access_token_resp =
                     get_long_lived_token_from_ws(&self, access_token_resp.access_token)?;
-                let ha_config = HaConfig {
-                    long_lived_token: long_lived_access_token_resp.result,
-                    ..self.ha
-                };
-                let config = YamlConfig { ha: ha_config };
+                self.ha.long_lived_token = long_lived_access_token_resp.result;
                 println!(
                     "no long lived access token found in config, so we are making one for you"
                 );
-                write_new_config(&config, file_name)?;
-                config
+                self.write_new_config(file_name)?;
+                Ok(())
             }
-            Some(_) => self,
-        };
-        Ok(new_config)
+            Some(_) => Ok(()),
+        }
     }
 
     pub fn update_webhook_id_if_needed(
-        self,
+        &mut self,
         file_name: &str,
         register_device_response: &RegisterDeviceResponse,
-    ) -> Result<Self> {
-        let new_config = match self.ha.webhook_id {
+    ) -> Result<()> {
+        match self.ha.webhook_id {
             None => {
-                let ha_config = HaConfig {
-                    webhook_id: Some(register_device_response.webhook_id.clone()),
-                    ..self.ha
-                };
-                let config = YamlConfig { ha: ha_config };
-                write_new_config(&config, file_name)?;
-                config
+                self.ha.webhook_id = Some(register_device_response.webhook_id.clone());
+                self.write_new_config(file_name)?;
+                Ok(())
             }
-            Some(_) => self,
-        };
-        Ok(new_config)
+            Some(_) => Ok(()),
+        }
     }
 }
 
