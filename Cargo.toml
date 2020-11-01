@@ -8,3 +8,15 @@ edition = "2018"
 
 [dependencies]
 clap = "^2"
+platform-info = "0.0.1"
+serde = { version = "1.0", features = ["derive"] }
+reqwest = { version = "0.10", features = ["json"] }
+tokio = { version = "0.2", features = ["full"] }
+serde_json = "1.0"
+serde_yaml = "0.8.13"
+uuid = { version = "0.8", features = ["v4"] }
+tiny_http = "0.6"
+url = "2.1.1"
+tungstenite = "0.11.1"
+percent-encoding = "2.1.0"
+ha_api = { git = "https://github.com/kylepotts/ha_api", branch = "kylep-add-as-mobile-app"}
