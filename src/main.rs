@@ -1,7 +1,9 @@
 mod config;
 
 use clap::{App, Arg};
-use homeassistant::types::{RegisterDeviceRequest, SensorRegistrationData, SensorRegistrationRequest};
+use homeassistant::types::{
+    RegisterDeviceRequest, SensorRegistrationData, SensorRegistrationRequest,
+};
 use homeassistant::HomeAssistantAPI;
 use platform_info::{PlatformInfo, Uname};
 use std::error;
@@ -50,14 +52,11 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let mut config = config::read_config_yml(config_file)?;
     config.update_device_id_if_needed(config_file)?;
 
-    let ha_api = HomeAssistantAPI::new(
-        config.ha.host.clone(),
-        OAUTH_CLIENT_ID.to_string()
-    );
+    let ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string());
 
     match config.ha.long_lived_token.clone() {
         Some(token) => ha_api.write().unwrap().set_long_lived_token(token),
-        None => {},
+        None => {}
     }
 
     config
@@ -73,9 +72,13 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
 
     let states = rest_client.states().await?;
     let name = platform_info.nodename().to_string();
-    let maybe_current_device_state = states
-        .into_iter()
-        .find(|r| r.attributes.get("friendly_name").unwrap_or(&String::from("")).as_str() == name);
+    let maybe_current_device_state = states.into_iter().find(|r| {
+        r.attributes
+            .get("friendly_name")
+            .unwrap_or(&String::from(""))
+            .as_str()
+            == name
+    });
 
     match maybe_current_device_state {
         None => {
@@ -110,7 +113,9 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
             };
 
             println!("Registering sensors");
-            native_client.register_sensor(&register_sensor_request).await?;
+            native_client
+                .register_sensor(&register_sensor_request)
+                .await?;
             println!("Successfully Registered Sensors")
         }
         Some(_) => println!("Device {} is already registered on Home Assistant", name),
