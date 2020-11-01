@@ -11,8 +11,8 @@ use url::Url;
 use serde_json::Value;
 use tungstenite::{connect, Message};
 
-use ha_api::types::{GetAccessTokenResponse, RegisterDeviceResponse};
-use ha_api::HomeAssistantAPI;
+use homeassistant::types::{GetAccessTokenResponse, RegisterDeviceResponse};
+use homeassistant::HomeAssistantAPI;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 

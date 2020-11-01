@@ -342,21 +342,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "ha_api"
-version = "0.1.0"
-source = "git+https://github.com/kylepotts/ha_api?branch=kylep-add-as-mobile-app#eeefca912b974a641af3593926d8b1a6164b9949"
-dependencies = [
- "futures",
- "reqwest",
- "serde",
-]
-
-[[package]]
 name = "halcyon"
 version = "0.1.0"
 dependencies = [
  "clap",
- "ha_api",
+ "homeassistant",
  "percent-encoding 2.1.0",
  "platform-info",
  "reqwest",
@@ -383,6 +373,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c30f6d0bc6b00693347368a67d41b58f2fb851215ff1da49e90fe2c5c667151"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "homeassistant"
+version = "0.2.0"
+source = "git+https://github.com/BCNelson/homeassistant-rs#7d01684aeb273085a8bee629552cb725ad97b518"
+dependencies = [
+ "chrono",
+ "futures",
+ "reqwest",
+ "serde",
 ]
 
 [[package]]
