@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = App::new("")
-        .version("1.0")
+        .version(VERSION)
         .author("Bradley Nelson <bradleynelson102@gmail.com>")
         .about("Home Assistant Linux Companion App")
         .arg(
@@ -44,6 +44,7 @@ async fn main() -> Result<()> {
     };
     Ok(())
 }
+
 async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     println!("Welcome to setup");
     let config_file = args.value_of("config").unwrap_or("config.yml");
@@ -54,9 +55,8 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
 
     let ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string());
 
-    match config.ha.long_lived_token.clone() {
-        Some(token) => ha_api.write().unwrap().set_long_lived_token(token),
-        None => {}
+    if let Some(token) = config.ha.long_lived_token.clone() {
+        ha_api.write().unwrap().set_long_lived_token(token)
     }
 
     config
