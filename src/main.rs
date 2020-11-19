@@ -1,8 +1,10 @@
 mod config;
 
 use clap::{App, Arg};
-use ha_api::types::{RegisterDeviceRequest, SensorRegistrationData, SensorRegistrationRequest};
-use ha_api::HomeAssistantAPI;
+use homeassistant::types::{
+    RegisterDeviceRequest, SensorRegistrationData, SensorRegistrationRequest,
+};
+use homeassistant::HomeAssistantAPI;
 use platform_info::{PlatformInfo, Uname};
 use std::error;
 
@@ -15,7 +17,7 @@ type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = App::new("")
-        .version("1.0")
+        .version(VERSION)
         .author("Bradley Nelson <bradleynelson102@gmail.com>")
         .about("Home Assistant Linux Companion App")
         .arg(
@@ -42,6 +44,7 @@ async fn main() -> Result<()> {
     };
     Ok(())
 }
+
 async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     println!("Welcome to setup");
     let config_file = args.value_of("config").unwrap_or("config.yml");
@@ -50,25 +53,32 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let mut config = config::read_config_yml(config_file)?;
     config.update_device_id_if_needed(config_file)?;
 
-    let mut ha_api = HomeAssistantAPI::new(
-        config.ha.host.clone(),
-        OAUTH_CLIENT_ID.to_string(),
-        config.ha.long_lived_token.clone(),
-    );
+    let ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string());
+
+    if let Some(token) = config.ha.long_lived_token.clone() {
+        ha_api.write().unwrap().set_long_lived_token(token)
+    }
 
     config
         .update_long_lived_access_token_if_needed(
-            &mut ha_api,
+            &mut ha_api.write().unwrap(),
             OAUTH_CLIENT_ID.to_string(),
             config_file,
         )
         .await?;
 
-    let states = ha_api.api_states().await?;
+    let mut native_client = ha_api.read().unwrap().get_native_client().await;
+    let rest_client = ha_api.read().unwrap().get_rest_client().await;
+
+    let states = rest_client.states().await?;
     let name = platform_info.nodename().to_string();
-    let maybe_current_device_state = states
-        .into_iter()
-        .find(|r| r.attributes.friendly_name.as_deref().unwrap_or("") == name);
+    let maybe_current_device_state = states.into_iter().find(|r| {
+        r.attributes
+            .get("friendly_name")
+            .unwrap_or(&String::from(""))
+            .as_str()
+            == name
+    });
 
     match maybe_current_device_state {
         None => {
@@ -85,7 +95,7 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
                 supports_encryption: false,
             };
             println!("Registering Machine");
-            let register_match_resp = ha_api.register_machine(&request).await?;
+            let register_match_resp = native_client.register_machine(&request).await?;
             config.update_webhook_id_if_needed(config_file, &register_match_resp)?;
             println!("Successfully Registered Device!");
             let register_sensor_request = SensorRegistrationRequest {
@@ -103,7 +113,9 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
             };
 
             println!("Registering sensors");
-            ha_api.register_sensor(&register_sensor_request).await?;
+            native_client
+                .register_sensor(&register_sensor_request)
+                .await?;
             println!("Successfully Registered Sensors")
         }
         Some(_) => println!("Device {} is already registered on Home Assistant", name),
