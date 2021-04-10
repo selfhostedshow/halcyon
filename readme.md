@@ -9,16 +9,15 @@ Halcyon is a Home Assistant app for Linux built in rust.
 * Rust
 * libssl-dev (or equivalent package for your distro)
 
-To build Halcyon, run `cargo build`.
+To build Halcyon, run `cargo build --release`.
+
+## Running
 
 Only the setup command is working at the moment
-To run it do the following
-`cargo build` then run the halcyon executable
-`./target/debug/halcyon setup`
-or
 `cargo run setup`
 
-
+Or if you built the release executable (found in target/release)
+`halcyon setup`
 ### Yaml Config
 
 The setup process will create a config file for you if you don't have one.
@@ -40,4 +39,4 @@ ha:
   device-id: ...
   webhook-id: ...
 ```
-The setup process should walk create the tokens and ids for you as you move through the process
+The setup process should create the tokens and ids for you as you move through the process
