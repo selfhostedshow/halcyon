@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::error;
-use std::io::Write;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use uuid::Uuid;
 
 use tiny_http::{Response, Server};
@@ -15,6 +16,7 @@ use homeassistant::types::{GetAccessTokenResponse, RegisterDeviceResponse};
 use homeassistant::HomeAssistantAPI;
 
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use std::ops::Not;
 
 const FRAGMENT: &AsciiSet = &CONTROLS.add(b':').add(b'/');
 
@@ -26,7 +28,7 @@ const LOCAL_SERVER_HOST: &str = "127.0.0.1:8000";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HaConfig {
-    pub host: String,
+    pub host: Option<String>,
     #[serde(rename = "long-lived-token")]
     pub long_lived_token: Option<String>,
     #[serde(rename = "device-id")]
@@ -83,7 +85,7 @@ pub async fn wait_for_token(
                 utf8_percent_encode(&query_prams, FRAGMENT).collect();
             println!(
                 "Open http://{}/auth/authorize?{} in your browser",
-                config.ha.host.as_str(),
+                config.ha.host.as_ref().unwrap().as_str(),
                 query_params_encoded
             );
             // blocks until the next request is received
@@ -143,7 +145,7 @@ fn get_long_lived_token_from_ws(
     config: &YamlConfig,
     access_token: String,
 ) -> Result<WsLongLivedAccessTokenResponse> {
-    let ws_url = format!("ws://{}/api/websocket", config.ha.host);
+    let ws_url = format!("ws://{}/api/websocket", config.ha.host.as_ref().unwrap());
     let url = Url::parse(ws_url.as_str())?;
     let (mut socket, _) = connect(url)?;
 
@@ -218,6 +220,27 @@ impl YamlConfig {
         Ok(())
     }
 
+    pub fn update_ha_host_if_needed(&mut self, file_name: &str) -> Result<()> {
+        match self.ha.host {
+            None => {
+                let mut input = String::new();
+                println!("Enter HomnAssisant host (host/ip:port)");
+                match io::stdin().read_line(&mut input) {
+                    Ok(_) => {
+                        self.ha.host = Some(input.trim().to_owned());
+                        self.write_new_config(file_name)?;
+                        Ok(())
+                    }
+                    Err(error) => {
+                        println!("error reading in HA host: {}", error);
+                        Err(Box::from("could not read from stdin"))
+                    }
+                }
+            }
+            Some(_) => Ok(()),
+        }
+    }
+
     pub fn update_device_id_if_needed(&mut self, file_name: &str) -> Result<()> {
         match self.ha.device_id {
             None => {
@@ -269,7 +292,21 @@ impl YamlConfig {
 }
 
 pub fn read_config_yml(file_name: &str) -> Result<YamlConfig> {
-    let f = std::fs::File::open(file_name)?;
-    let config: YamlConfig = serde_yaml::from_reader(f)?;
+    //let f = std::fs::File::open(file_name)?
+    let exists = std::path::Path::new(file_name).exists();
+    if exists.not() {
+        println!("config file does not exist creating one");
+        let mut f = std::fs::File::create(file_name)?;
+        write!(
+            f,
+            r#"
+---
+ha:
+    host: ~
+"#
+        )?
+    };
+    let file = OpenOptions::new().read(true).write(true).open(file_name)?;
+    let config: YamlConfig = serde_yaml::from_reader(file)?;
     Ok(config)
 }

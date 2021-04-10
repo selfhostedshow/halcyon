@@ -6,6 +6,7 @@ use homeassistant::types::{
 };
 use homeassistant::HomeAssistantAPI;
 use platform_info::{PlatformInfo, Uname};
+use serde_json::Value;
 use std::error;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -51,9 +52,11 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let platform_info = PlatformInfo::new()?;
 
     let mut config = config::read_config_yml(config_file)?;
+    config.update_ha_host_if_needed(config_file)?;
     config.update_device_id_if_needed(config_file)?;
 
-    let ha_api = HomeAssistantAPI::new(config.ha.host.clone(), OAUTH_CLIENT_ID.to_string());
+    let ha_api =
+        HomeAssistantAPI::new(config.ha.host.clone().unwrap(), OAUTH_CLIENT_ID.to_string());
 
     if let Some(token) = config.ha.long_lived_token.clone() {
         ha_api.write().unwrap().set_long_lived_token(token)
@@ -73,11 +76,11 @@ async fn command_setup(args: &clap::ArgMatches<'_>) -> Result<()> {
     let states = rest_client.states().await?;
     let name = platform_info.nodename().to_string();
     let maybe_current_device_state = states.into_iter().find(|r| {
-        r.attributes
-            .get("friendly_name")
-            .unwrap_or(&String::from(""))
-            .as_str()
-            == name
+        let friendly_name = match r.attributes["friendly_name"] {
+            Value::String(ref s) => s,
+            _ => "",
+        };
+        friendly_name == name
     });
 
     match maybe_current_device_state {
