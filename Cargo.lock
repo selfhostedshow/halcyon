@@ -377,13 +377,14 @@ dependencies = [
 
 [[package]]
 name = "homeassistant"
-version = "0.2.0"
-source = "git+https://github.com/BCNelson/homeassistant-rs#7d01684aeb273085a8bee629552cb725ad97b518"
+version = "0.3.0"
+source = "git+https://github.com/selfhostedshow/homeassistant-rs/?branch=kylep-config-updates#06d36b4bf5a5800f2b880fb915d780e30c00877b"
 dependencies = [
  "chrono",
  "futures",
  "reqwest",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
